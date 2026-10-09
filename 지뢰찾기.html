@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>지뢰찾기</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#e7ecea; --panel:#f6f8f7; --ink:#1d2b28; --cell:#b9c8c3; --cell-hi:#cfdcd8; --open:#f6f8f7;
+  --line:#8fa39d; --accent:#0f7b6c; --mine:#d6453d;
+  --n1:#1f5fbf;--n2:#2b8a3e;--n3:#d6453d;--n4:#5b2fa3;--n5:#9c4a12;--n6:#0a8a8a;--n7:#222;--n8:#666;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#121a18; --panel:#1b2623; --ink:#e3ece9; --cell:#37504a; --cell-hi:#46645c; --open:#1b2623;
+    --line:#0d1412; --accent:#3fc5ae; --mine:#ef6a61;
+    --n1:#6aa3ff;--n2:#6fd185;--n3:#ff7f76;--n4:#b79aff;--n5:#e8a064;--n6:#52d6d6;--n7:#ddd;--n8:#aaa;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121a18; --panel:#1b2623; --ink:#e3ece9; --cell:#37504a; --cell-hi:#46645c; --open:#1b2623;
+  --line:#0d1412; --accent:#3fc5ae; --mine:#ef6a61;
+  --n1:#6aa3ff;--n2:#6fd185;--n3:#ff7f76;--n4:#b79aff;--n5:#e8a064;--n6:#52d6d6;--n7:#ddd;--n8:#aaa;
+}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Noto Sans KR",system-ui,-apple-system,"Malgun Gothic",sans-serif;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 12px;-webkit-user-select:none;user-select:none}
+h1{font-size:1.6rem;margin:0 0 14px;font-weight:800;letter-spacing:-.02em}
+.levels{display:flex;gap:6px;margin-bottom:14px}
+.levels button,.reset{font:inherit;border:2px solid var(--ink);background:transparent;color:var(--ink);padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+.levels button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.board-wrap{background:var(--panel);padding:12px;border-radius:14px;border:2px solid var(--ink);max-width:100%}
+.bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px}
+.lcd{font-variant-numeric:tabular-nums;font-weight:800;font-size:1.4rem;min-width:70px;padding:4px 10px;border-radius:6px;background:var(--ink);color:var(--bg);text-align:center}
+.reset{font-size:1.4rem;padding:2px 12px;line-height:1.4}
+.scroll{overflow-x:auto;max-width:calc(100vw - 52px)}
+#board{display:grid;gap:2px;background:var(--line);border:2px solid var(--line);width:max-content;margin:0 auto;touch-action:manipulation}
+.cell{width:var(--sz,30px);height:var(--sz,30px);background:var(--cell);display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:calc(var(--sz,30px)*.55);cursor:pointer;box-shadow:inset 2px 2px 0 var(--cell-hi),inset -2px -2px 0 rgba(0,0,0,.18)}
+.cell:hover{filter:brightness(1.08)}
+.cell.open{background:var(--open);box-shadow:none;cursor:default;filter:none}
+.cell.boom{background:var(--mine)}
+.cell.wrong{background:color-mix(in srgb,var(--mine) 35%,var(--open))}
+.c1{color:var(--n1)}.c2{color:var(--n2)}.c3{color:var(--n3)}.c4{color:var(--n4)}.c5{color:var(--n5)}.c6{color:var(--n6)}.c7{color:var(--n7)}.c8{color:var(--n8)}
+.msg{margin-top:12px;min-height:1.5em;font-weight:700;text-align:center}
+.msg.win{color:var(--accent)}.msg.lose{color:var(--mine)}
+.help{margin-top:10px;font-size:.85rem;opacity:.75;text-align:center;max-width:380px;line-height:1.5}
+@media (prefers-reduced-motion:no-preference){.cell.boom{animation:pop .25s}}
+@keyframes pop{from{transform:scale(1.3)}to{transform:scale(1)}}
+</style>
+</head>
+<body>
+<h1>지뢰찾기</h1>
+<div class="levels" role="group" aria-label="난이도">
+  <button data-l="easy" aria-pressed="true">초급</button>
+  <button data-l="mid" aria-pressed="false">중급</button>
+  <button data-l="hard" aria-pressed="false">고급</button>
+</div>
+<div class="board-wrap">
+  <div class="bar">
+    <div class="lcd" id="mines" aria-label="남은 지뢰">010</div>
+    <button class="reset" id="reset" aria-label="새 게임">🙂</button>
+    <div class="lcd" id="time" aria-label="시간">000</div>
+  </div>
+  <div class="scroll"><div id="board"></div></div>
+</div>
+<div class="msg" id="msg"></div>
+<div class="help">왼쪽 클릭: 칸 열기 · 오른쪽 클릭(모바일은 길게 누르기): 깃발 · 숫자를 클릭하면 주변 칸을 한 번에 엽니다</div>
+<script>
+const LV={easy:{r:9,c:9,m:10},mid:{r:16,c:16,m:40},hard:{r:16,c:30,m:99}};
+let lv='easy',R,C,M,grid,started,over,flags,opened,timer,secs;
+const $=id=>document.getElementById(id);
+const boardEl=$('board');
+const pad=n=>String(Math.max(-99,n)).padStart(3,'0');
+
+function init(){
+  ({r:R,c:C,m:M}=LV[lv]);
+  clearInterval(timer);secs=0;started=false;over=false;flags=0;opened=0;
+  grid=Array.from({length:R},()=>Array.from({length:C},()=>({m:false,o:false,f:false,n:0})));
+  const sz=Math.max(22,Math.min(32,Math.floor((Math.min(window.innerWidth,520)-70)/C)));
+  boardEl.style.setProperty('--sz',(C>16?24:Math.max(sz,26))+'px');
+  boardEl.style.gridTemplateColumns=`repeat(${C},var(--sz))`;
+  boardEl.innerHTML='';
+  for(let y=0;y<R;y++)for(let x=0;x<C;x++){
+    const d=document.createElement('div');d.className='cell';d.dataset.y=y;d.dataset.x=x;boardEl.appendChild(d);
+  }
+  $('reset').textContent='🙂';$('msg').textContent='';$('msg').className='msg';
+  $('mines').textContent=pad(M);$('time').textContent='000';
+}
+const el=(y,x)=>boardEl.children[y*C+x];
+function nbrs(y,x){const a=[];for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+  if(!dy&&!dx)continue;const ny=y+dy,nx=x+dx;if(ny>=0&&ny<R&&nx>=0&&nx<C)a.push([ny,nx]);}return a;}
+
+function place(sy,sx){
+  const safe=new Set([sy*C+sx,...nbrs(sy,sx).map(([y,x])=>y*C+x)]);
+  let p=0;while(p<M){const i=Math.floor(Math.random()*R*C);
+    if(safe.has(i)||grid[0|i/C][i%C].m)continue;grid[0|i/C][i%C].m=true;p++;}
+  for(let y=0;y<R;y++)for(let x=0;x<C;x++)grid[y][x].n=nbrs(y,x).filter(([a,b])=>grid[a][b].m).length;
+  started=true;
+  timer=setInterval(()=>{secs++;$('time').textContent=pad(Math.min(secs,999));},1000);
+}
+function reveal(y,x){
+  const st=[[y,x]];
+  while(st.length){
+    const [cy,cx]=st.pop(),g=grid[cy][cx];
+    if(g.o||g.f)continue;
+    g.o=true;opened++;
+    const e=el(cy,cx);e.classList.add('open');
+    if(g.n){e.textContent=g.n;e.classList.add('c'+g.n);}
+    else nbrs(cy,cx).forEach(p=>st.push(p));
+  }
+}
+function lose(by,bx){
+  over=true;clearInterval(timer);$('reset').textContent='😵';
+  for(let y=0;y<R;y++)for(let x=0;x<C;x++){
+    const g=grid[y][x],e=el(y,x);
+    if(g.m&&!g.f){e.classList.add('open');e.textContent='💣';}
+    else if(!g.m&&g.f){e.classList.add('open','wrong');e.textContent='❌';}
+  }
+  el(by,bx).classList.add('boom');
+  $('msg').textContent='지뢰를 밟았어요. 다시 도전해 보세요!';$('msg').className='msg lose';
+}
+function checkWin(){
+  if(opened!==R*C-M)return;
+  over=true;clearInterval(timer);$('reset').textContent='😎';
+  for(let y=0;y<R;y++)for(let x=0;x<C;x++){const g=grid[y][x];
+    if(g.m&&!g.f){g.f=true;el(y,x).textContent='🚩';}}
+  $('mines').textContent=pad(0);
+  $('msg').textContent=`클리어! 기록: ${secs}초`;$('msg').className='msg win';
+}
+function open(y,x){
+  if(over)return;const g=grid[y][x];if(g.f||g.o)return;
+  if(!started)place(y,x);
+  if(g.m){lose(y,x);return;}
+  reveal(y,x);checkWin();
+}
+function chord(y,x){
+  const g=grid[y][x];if(!g.o||!g.n)return;
+  const ns=nbrs(y,x);
+  if(ns.filter(([a,b])=>grid[a][b].f).length!==g.n)return;
+  for(const [a,b] of ns){
+    const h=grid[a][b];if(h.f||h.o)continue;
+    if(h.m){lose(a,b);return;}
+    reveal(a,b);
+  }
+  checkWin();
+}
+function flag(y,x){
+  if(over)return;const g=grid[y][x];if(g.o)return;
+  g.f=!g.f;flags+=g.f?1:-1;el(y,x).textContent=g.f?'🚩':'';
+  $('mines').textContent=pad(M-flags);
+}
+function target(e){const c=e.target.closest('.cell');return c?[+c.dataset.y,+c.dataset.x]:null;}
+
+let lp=null,lpFired=false;
+boardEl.addEventListener('click',e=>{
+  if(lpFired){lpFired=false;return;}
+  const t=target(e);if(!t)return;
+  grid[t[0]][t[1]].o?chord(...t):open(...t);
+});
+boardEl.addEventListener('contextmenu',e=>{e.preventDefault();const t=target(e);if(t)flag(...t);});
+boardEl.addEventListener('touchstart',e=>{
+  const t=target(e);if(!t)return;lpFired=false;
+  lp=setTimeout(()=>{lpFired=true;flag(...t);if(navigator.vibrate)navigator.vibrate(20);},400);
+},{passive:true});
+['touchend','touchmove','touchcancel'].forEach(n=>boardEl.addEventListener(n,()=>clearTimeout(lp),{passive:true}));
+$('reset').onclick=init;
+document.querySelectorAll('.levels button').forEach(b=>b.onclick=()=>{
+  lv=b.dataset.l;document.querySelectorAll('.levels button').forEach(x=>x.setAttribute('aria-pressed',x===b));init();
+});
+init();
+</script>
+</body>
+</html>
